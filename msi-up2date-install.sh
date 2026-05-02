@@ -3,8 +3,8 @@
 set -euo pipefail
 
 BASE_DIR="/opt/zabbix"
-TARGET_SCRIPTS_DIR="/opt/scripts"
-SOURCE_SCRIPTS_DIR="./zabbix/scripts/msi-up2date"
+TARGET_SCRIPTS_DIR="/opt/zabbix/scripts"
+SOURCE_SCRIPTS_DIR="zabbix/scripts"
 
 REQUIRED_DIRS=("configs" "common" "scripts")
 
