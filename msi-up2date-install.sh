@@ -67,10 +67,9 @@ ensure_target_dir() {
 copy_scripts() {
   log "Kopiuję skrypty z $SOURCE_SCRIPTS_DIR do $TARGET_SCRIPTS_DIR"
 
-  rsync -av --delete \
-    "$SOURCE_SCRIPTS_DIR"/ \
-    "$TARGET_SCRIPTS_DIR"/
-}
+  # kopiuje zawartość katalogu (w tym pliki ukryte)
+  cp -a "$SOURCE_SCRIPTS_DIR"/. "$TARGET_SCRIPTS_DIR"/
+}}
 
 set_permissions() {
   log "Ustawiam uprawnienia"
