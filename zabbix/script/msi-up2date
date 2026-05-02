@@ -1,0 +1,172 @@
+#!/usr/bin/env bash
+# Author: Mariusz Szulerecki
+# Description: Basic system info and APT stats + dpkg update listing
+# Release: 2023-08-03
+
+set -euo pipefail
+
+AGENTD_CONF_FILE=/etc/zabbix/zabbix_agent2.conf
+TEMP_ZBX_FILE=/tmp/zabbix_msi-up2date.tmp
+
+usage() {
+  echo "Usage: $0 {send|list-last|list-current|list-ready}"
+  exit 1
+}
+
+#######################################
+# Wysyła metryki do Zabbixa
+#######################################
+send_metrics() {
+
+  ZBX_SERVER=$(grep '^Server=' "$AGENTD_CONF_FILE" | cut -d= -f2 || true)
+
+  if [[ -z "${ZBX_SERVER:-}" ]]; then
+    echo "Server is not set in zabbix_agent2.conf"
+    exit 1
+  fi
+
+  if grep -q '^HostnameItem' "$AGENTD_CONF_FILE"; then
+    ZBX_HOSTNAME=$(hostname)
+  else
+    ZBX_HOSTNAME=$(grep '^Hostname=' "$AGENTD_CONF_FILE" | cut -d= -f2)
+  fi
+
+  UPDATES=$(/usr/lib/update-notifier/apt-check 2>&1 || echo "-1;-1")
+
+  : > "$TEMP_ZBX_FILE"
+
+  echo -n "\"$ZBX_HOSTNAME\" msi.up2date.os.distro " >> "$TEMP_ZBX_FILE"
+  lsb_release -a 2>/dev/null | awk -F: '/Distributor ID/ {gsub(/^[ \t]+/, "", $2); print $2}' >> "$TEMP_ZBX_FILE"
+
+  echo -n "\"$ZBX_HOSTNAME\" msi.up2date.os.release " >> "$TEMP_ZBX_FILE"
+  lsb_release -a 2>/dev/null | awk -F: '/Release/ {gsub(/^[ \t]+/, "", $2); print $2}' >> "$TEMP_ZBX_FILE"
+
+  echo -n "\"$ZBX_HOSTNAME\" msi.up2date.packages.available.regular " >> "$TEMP_ZBX_FILE"
+  echo "$UPDATES" | cut -d';' -f1 >> "$TEMP_ZBX_FILE"
+
+  echo -n "\"$ZBX_HOSTNAME\" msi.up2date.packages.available.security " >> "$TEMP_ZBX_FILE"
+  echo "$UPDATES" | cut -d';' -f2 >> "$TEMP_ZBX_FILE"
+
+  zabbix_sender --config "$AGENTD_CONF_FILE" -z "$ZBX_SERVER" -i "$TEMP_ZBX_FILE" -vv
+}
+
+#######################################
+# Zwraca operacje install/upgrade z dpkg logs
+#######################################
+get_dpkg_updates() {
+  zcat -f /var/log/dpkg.log* 2>/dev/null | \
+  grep -E " install | upgrade " | \
+  awk '{split($4,a,":"); print $1, a[1], $6, $3, $5}'
+}
+
+#######################################
+# Ostatnie 30 dni
+#######################################
+last_month_updates() {
+  start=$(date -d "$(date +%Y-%m-01) -1 month" +%F)
+  end=$(date -d "$(date +%Y-%m-01) -1 day" +%F)
+
+  get_dpkg_updates | awk -v s="$start" -v e="$end" '$1 >= s && $1 <= e'
+}
+
+#######################################
+# Bieżący miesiąc
+#######################################
+current_month_updates() {
+  start=$(date +%Y-%m-01)
+  end=$(date -d "$start +1 month -1 day" +%F)
+
+  get_dpkg_updates | awk -v s="$start" -v e="$end" '$1 >= s && $1 <= e'
+}
+
+#######################################
+# Gotowe do instalacji
+#######################################
+#ready_to_install_updates() {
+#  apt list --upgradable 2>/dev/null | tail -n +2
+#}
+ready_to_install_updates() {
+  MODE="${1:-skip}"   # auto | force | skip
+  CACHE_MAX_AGE=3600
+  PKGCACHE="/var/cache/apt/pkgcache.bin"
+
+  get_last_update() {
+    if [ -f "$PKGCACHE" ]; then
+      stat -c %Y "$PKGCACHE"
+    else
+      echo 0
+    fi
+  }
+
+  now=$(date +%s)
+  last_update=$(get_last_update)
+  age=$((now - last_update))
+
+  refreshed="no"
+  do_update="no"
+
+  case "$MODE" in
+    force)
+      do_update="yes"
+      ;;
+    skip)
+      do_update="no"
+      ;;
+    auto)
+      if [ "$age" -gt "$CACHE_MAX_AGE" ]; then
+        do_update="yes"
+      fi
+      ;;
+    *)
+      echo "Invalid mode: $MODE (use: auto|force|skip)" >&2
+      return 1
+      ;;
+  esac
+
+  if [ "$do_update" = "yes" ]; then
+    apt-get update -qq >/dev/null 2>&1
+
+    now=$(date +%s)
+    last_update=$(get_last_update)
+    age=$((now - last_update))
+    refreshed="yes"
+  fi
+
+  echo "CACHE_AGE_SECONDS=$age refreshed=$refreshed mode=$MODE source=pkgcache"
+
+  apt list --upgradable 2>/dev/null | tail -n +2
+}
+
+#######################################
+# APT update
+#######################################
+apt_update() {
+  apt-get update -qq >/dev/null 2>&1
+}
+
+
+#######################################
+# Dispatcher
+#######################################
+[[ $# -eq 1 ]] || usage
+
+case "$1" in
+  send)
+    send_metrics
+    ;;
+  list-last)
+    last_month_updates
+    ;;
+  list-current)
+    current_month_updates
+    ;;
+  list-ready)
+    ready_to_install_updates
+    ;;
+  apt-update)
+    apt_update
+    ;;
+  *)
+    usage
+    ;;
+esac
