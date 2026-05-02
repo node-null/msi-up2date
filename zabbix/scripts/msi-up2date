@@ -31,7 +31,18 @@ send_metrics() {
     ZBX_HOSTNAME=$(grep '^Hostname=' "$AGENTD_CONF_FILE" | cut -d= -f2)
   fi
 
-  UPDATES=$(/usr/lib/update-notifier/apt-check 2>&1 || echo "-1;-1")
+  if [ -x /usr/lib/update-notifier/apt-check ]; then
+    UPDATES=$(/usr/lib/update-notifier/apt-check 2>&1 || echo "-1;-1")
+  else
+    # Debian fallback
+    REGULAR=$(apt list --upgradable 2>/dev/null | tail -n +2 | wc -l)
+
+    # security – próba detekcji z repo security
+    SECURITY=$(apt list --upgradable 2>/dev/null | \
+      grep -i security | wc -l)
+
+    UPDATES="${REGULAR};${SECURITY}"
+  fi
 
   : > "$TEMP_ZBX_FILE"
 
