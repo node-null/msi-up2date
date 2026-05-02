@@ -38,9 +38,8 @@ send_metrics() {
     REGULAR=$(apt list --upgradable 2>/dev/null | tail -n +2 | wc -l)
 
     # security – próba detekcji z repo security
-    SECURITY=$(apt list --upgradable 2>/dev/null | \
-      grep -i security | wc -l)
-
+    SECURITY=$(apt list --upgradable 2>/dev/null | grep -i security || true | wc -l)
+    
     UPDATES="${REGULAR};${SECURITY}"
   fi
 
