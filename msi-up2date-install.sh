@@ -69,7 +69,7 @@ copy_scripts() {
 
   # kopiuje zawartość katalogu (w tym pliki ukryte)
   cp -a "$SOURCE_SCRIPTS_DIR"/. "$TARGET_SCRIPTS_DIR"/
-}}
+}
 
 set_permissions() {
   log "Ustawiam uprawnienia"
