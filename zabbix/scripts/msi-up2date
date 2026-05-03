@@ -65,7 +65,7 @@ send_metrics() {
 #######################################
 get_dpkg_updates() {
   zcat -f /var/log/dpkg.log* 2>/dev/null | \
-  grep -E " install | upgrade " | \
+  grep -aE " install | upgrade " | \
   awk '{split($4,a,":"); print $1, a[1], $6, $3, $5}'
 }
 
